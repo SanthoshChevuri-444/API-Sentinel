@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AnalysisStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ChangeSeverity {
+  BREAKING
+  POTENTIALLY_BREAKING
+  NON_BREAKING
+}
+
+enum ImpactRisk {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum HealthStatus {
+  UP
+  DOWN
+  DEGRADED
+  UNKNOWN
+}
+
+enum IncidentStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum IncidentSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AuditActorType {
+  USER
+  MCP
+  SYSTEM
+}
+
+model User {
+  id                 Int               @id @default(autoincrement())
+  name               String
+  email              String            @unique
+  passwordHash       String
+  createdAt          DateTime          @default(now())
+  ownedProjects      Project[]         @relation("ProjectOwner")
+  requestedAnalyses  ContractAnalysis[] @relation("AnalysisRequester")
+  auditLogs          AuditLog[]        @relation("AuditActor")
+}
+
+model Project {
+  id              Int              @id @default(autoincrement())
+  name            String
+  ownerId         Int
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  owner           User             @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  apiServices     ApiService[]
+  consumerServices ConsumerService[]
+  auditLogs       AuditLog[]
+
+  @@unique([ownerId, name])
+  @@index([ownerId])
+}
+
+model ApiService {
+  id            Int           @id @default(autoincrement())
+  projectId     Int
+  name          String
+  baseUrl       String
+  environment   String        @default("development")
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contracts     ApiContract[]
+  dependencies  ApiDependency[] @relation("ProviderDependencies")
+  healthChecks  HealthCheck[]
+  incidents     Incident[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+model ApiContract {
+  id              Int               @id @default(autoincrement())
+  apiServiceId    Int
+  version         String
+  spec            Json
+  specHash        String?
+  createdAt       DateTime          @default(now())
+  apiService      ApiService        @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
+  sourceAnalyses  ContractAnalysis[] @relation("SourceContract")
+  targetAnalyses  ContractAnalysis[] @relation("TargetContract")
+
+  @@unique([apiServiceId, version])
+  @@index([apiServiceId, createdAt])
+}
+
+model ConsumerService {
+  id            Int             @id @default(autoincrement())
+  projectId     Int
+  name          String
+  description   String?
+  createdAt     DateTime        @default(now())
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dependencies  ApiDependency[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+model ApiDependency {
+  id                Int             @id @default(autoincrement())
+  consumerServiceId Int
+  apiServiceId      Int
+  operationMethod   String
+  operationPath     String
+  consumedFields    String[]        @default([])
+  description       String?
+  createdAt         DateTime        @default(now())
+  consumerService   ConsumerService @relation(fields: [consumerServiceId], references: [id], onDelete: Cascade)
+  apiService        ApiService      @relation("ProviderDependencies", fields: [apiServiceId], references: [id], onDelete: Cascade)
+  impactAssessments ImpactAssessment[]
+
+  @@unique([consumerServiceId, apiServiceId, operationMethod, operationPath])
+  @@index([apiServiceId])
+  @@index([consumerServiceId])
+}
+
+model ContractAnalysis {
+  id               Int             @id @default(autoincrement())
+  sourceContractId Int
+  targetContractId Int
+  requestedById    Int?
+  status           AnalysisStatus  @default(PENDING)
+  summary          String?
+  createdAt        DateTime        @default(now())
+  completedAt      DateTime?
+  sourceContract   ApiContract     @relation("SourceContract", fields: [sourceContractId], references: [id], onDelete: Restrict)
+  targetContract   ApiContract     @relation("TargetContract", fields: [targetContractId], references: [id], onDelete: Restrict)
+  requestedBy      User?           @relation("AnalysisRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  changes          ContractChange[]
+
+  @@index([sourceContractId, targetContractId])
+  @@index([status, createdAt])
+}
+
+model ContractChange {
+  id             Int               @id @default(autoincrement())
+  analysisId     Int
+  operationPath  String?
+  httpMethod     String?
+  changeType     String
+  severity       ChangeSeverity
+  title          String
+  description    String
+  oldValue       Json?
+  newValue       Json?
+  analysis       ContractAnalysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  impactAssessments ImpactAssessment[]
+
+  @@index([analysisId, severity])
+}
+
+model ImpactAssessment {
+  id                   Int            @id @default(autoincrement())
+  contractChangeId     Int
+  apiDependencyId      Int
+  riskLevel            ImpactRisk
+  reason               String
+  recommendedTest      String?
+  createdAt            DateTime       @default(now())
+  contractChange       ContractChange @relation(fields: [contractChangeId], references: [id], onDelete: Cascade)
+  apiDependency        ApiDependency  @relation(fields: [apiDependencyId], references: [id], onDelete: Cascade)
+
+  @@unique([contractChangeId, apiDependencyId])
+  @@index([apiDependencyId])
+}
+
+model Incident {
+  id            Int              @id @default(autoincrement())
+  apiServiceId  Int
+  title         String
+  status        IncidentStatus   @default(OPEN)
+  severity      IncidentSeverity @default(WARNING)
+  firstSeenAt   DateTime         @default(now())
+  lastSeenAt    DateTime         @default(now())
+  resolvedAt    DateTime?
+  apiService    ApiService       @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
+  healthChecks  HealthCheck[]
+
+  @@index([apiServiceId, status])
+  @@index([firstSeenAt])
+}
+
+model HealthCheck {
+  id             Int          @id @default(autoincrement())
+  apiServiceId   Int
+  incidentId     Int?
+  status         HealthStatus
+  checkedAt      DateTime     @default(now())
+  responseTimeMs Int?
+  httpStatus     Int?
+  errorMessage   String?
+  apiService     ApiService   @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
+  incident       Incident?    @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([apiServiceId, checkedAt])
+  @@index([incidentId])
+}
+
+model AuditLog {
+  id           Int           @id @default(autoincrement())
+  projectId    Int
+  actorUserId  Int?
+  actorType    AuditActorType @default(USER)
+  action       String
+  resourceType String
+  resourceId   String?
+  details      Json?
+  createdAt    DateTime      @default(now())
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor        User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([resourceType, resourceId])
+}
