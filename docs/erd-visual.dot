@@ -1,0 +1,36 @@
+digraph API_Sentinel_ERD {
+  graph [rankdir=LR, splines=ortho, nodesep=0.45, ranksep=0.85, pad=0.25, bgcolor="white", fontname="Helvetica", labelloc="t", label="API Sentinel — MVP Entity Relationship Diagram", fontsize=22];
+  node [shape=plain, fontname="Helvetica", fontsize=10];
+  edge [color="#64748b", penwidth=1.15, arrowsize=0.65, fontname="Helvetica", fontsize=9];
+
+  User [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#dbeafe"><B>USER</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">UQ email</TD></TR><TR><TD ALIGN="LEFT">name, passwordHash</TD></TR><TR><TD ALIGN="LEFT">createdAt</TD></TR></TABLE> >];
+  Project [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#dbeafe"><B>PROJECT</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK ownerId</TD></TR><TR><TD ALIGN="LEFT">name, createdAt, updatedAt</TD></TR></TABLE> >];
+  ApiService [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#dbeafe"><B>API_SERVICE</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK projectId</TD></TR><TR><TD ALIGN="LEFT">name, baseUrl, environment</TD></TR><TR><TD ALIGN="LEFT">isActive, timestamps</TD></TR></TABLE> >];
+  ApiContract [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#dbeafe"><B>API_CONTRACT</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK apiServiceId</TD></TR><TR><TD ALIGN="LEFT">version, spec (JSON), specHash</TD></TR><TR><TD ALIGN="LEFT">createdAt</TD></TR></TABLE> >];
+  ConsumerService [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#dbeafe"><B>CONSUMER_SERVICE</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK projectId</TD></TR><TR><TD ALIGN="LEFT">name, description</TD></TR><TR><TD ALIGN="LEFT">createdAt</TD></TR></TABLE> >];
+  ApiDependency [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#dcfce7"><B>API_DEPENDENCY</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK consumerServiceId</TD></TR><TR><TD ALIGN="LEFT">FK apiServiceId</TD></TR><TR><TD ALIGN="LEFT">operationMethod, operationPath</TD></TR><TR><TD ALIGN="LEFT">consumedFields, description</TD></TR></TABLE> >];
+  ContractAnalysis [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#dbeafe"><B>CONTRACT_ANALYSIS</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK sourceContractId</TD></TR><TR><TD ALIGN="LEFT">FK targetContractId</TD></TR><TR><TD ALIGN="LEFT">FK requestedById (optional)</TD></TR><TR><TD ALIGN="LEFT">status, summary, timestamps</TD></TR></TABLE> >];
+  ContractChange [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#ffedd5"><B>CONTRACT_CHANGE</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK analysisId</TD></TR><TR><TD ALIGN="LEFT">operationPath, httpMethod</TD></TR><TR><TD ALIGN="LEFT">changeType, severity, title</TD></TR><TR><TD ALIGN="LEFT">description, oldValue, newValue</TD></TR></TABLE> >];
+  ImpactAssessment [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#dcfce7"><B>IMPACT_ASSESSMENT</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK contractChangeId</TD></TR><TR><TD ALIGN="LEFT">FK apiDependencyId</TD></TR><TR><TD ALIGN="LEFT">riskLevel, reason</TD></TR><TR><TD ALIGN="LEFT">recommendedTest, createdAt</TD></TR></TABLE> >];
+  HealthCheck [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#f1f5f9"><B>HEALTH_CHECK</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK apiServiceId</TD></TR><TR><TD ALIGN="LEFT">FK incidentId (optional)</TD></TR><TR><TD ALIGN="LEFT">status, checkedAt, responseTimeMs</TD></TR><TR><TD ALIGN="LEFT">httpStatus, errorMessage</TD></TR></TABLE> >];
+  Incident [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#f1f5f9"><B>INCIDENT</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK apiServiceId</TD></TR><TR><TD ALIGN="LEFT">title, status, severity</TD></TR><TR><TD ALIGN="LEFT">firstSeenAt, lastSeenAt</TD></TR><TR><TD ALIGN="LEFT">resolvedAt</TD></TR></TABLE> >];
+  AuditLog [label=< <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="5"><TR><TD BGCOLOR="#f1f5f9"><B>AUDIT_LOG</B></TD></TR><TR><TD ALIGN="LEFT">PK id</TD></TR><TR><TD ALIGN="LEFT">FK projectId</TD></TR><TR><TD ALIGN="LEFT">FK actorUserId (optional)</TD></TR><TR><TD ALIGN="LEFT">actorType, action, resource</TD></TR><TR><TD ALIGN="LEFT">details (JSON), createdAt</TD></TR></TABLE> >];
+
+  User -> Project [label="owns 1:N"];
+  Project -> ApiService [label="registers 1:N"];
+  Project -> ConsumerService [label="registers 1:N"];
+  ApiService -> ApiContract [label="versions 1:N"];
+  ApiContract -> ContractAnalysis [label="source 1:N"];
+  ApiContract -> ContractAnalysis [label="target 1:N"];
+  User -> ContractAnalysis [label="requests 1:N"];
+  ContractAnalysis -> ContractChange [label="detects 1:N"];
+  ConsumerService -> ApiDependency [label="declares 1:N"];
+  ApiService -> ApiDependency [label="provider 1:N"];
+  ContractChange -> ImpactAssessment [label="evaluated 1:N"];
+  ApiDependency -> ImpactAssessment [label="evaluated 1:N"];
+  ApiService -> HealthCheck [label="checks 1:N"];
+  ApiService -> Incident [label="incidents 1:N"];
+  Incident -> HealthCheck [label="groups 1:N"];
+  Project -> AuditLog [label="records 1:N"];
+  User -> AuditLog [label="actor 1:N"];
+}
