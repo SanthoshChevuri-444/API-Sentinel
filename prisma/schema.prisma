@@ -7,30 +7,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum AnalysisStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
+// ---------- Enums ----------
+
+enum ContractFormat {
+  OPENAPI
+  GRAPHQL
+  OTHER
 }
 
-enum ChangeSeverity {
-  BREAKING
-  POTENTIALLY_BREAKING
-  NON_BREAKING
+enum Environment {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
 }
 
-enum ImpactRisk {
-  HIGH
-  MEDIUM
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+  OPTIONS
+}
+
+enum CheckStatus {
+  SUCCESS
+  FAILURE
+  TIMEOUT
+}
+
+enum Severity {
   LOW
-}
-
-enum HealthStatus {
-  UP
-  DOWN
-  DEGRADED
-  UNKNOWN
+  MEDIUM
+  HIGH
+  CRITICAL
 }
 
 enum IncidentStatus {
@@ -39,204 +50,188 @@ enum IncidentStatus {
   RESOLVED
 }
 
-enum IncidentSeverity {
-  INFO
-  WARNING
-  CRITICAL
+enum ChangeType {
+  ENDPOINT_REMOVED
+  METHOD_REMOVED
+  REQUIRED_PARAM_ADDED
+  PARAM_REMOVED
+  PARAM_TYPE_CHANGED
+  RESPONSE_SCHEMA_CHANGED
+  OTHER
 }
 
-enum AuditActorType {
-  USER
-  MCP
-  SYSTEM
-}
-
-model User {
-  id                 Int               @id @default(autoincrement())
-  name               String
-  email              String            @unique
-  passwordHash       String
-  createdAt          DateTime          @default(now())
-  ownedProjects      Project[]         @relation("ProjectOwner")
-  requestedAnalyses  ContractAnalysis[] @relation("AnalysisRequester")
-  auditLogs          AuditLog[]        @relation("AuditActor")
-}
+// ---------- Models ----------
 
 model Project {
-  id              Int              @id @default(autoincrement())
-  name            String
-  ownerId         Int
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  owner           User             @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  apiServices     ApiService[]
-  consumerServices ConsumerService[]
-  auditLogs       AuditLog[]
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
 
-  @@unique([ownerId, name])
-  @@index([ownerId])
+  apiServices ApiService[]
+  consumers   Consumer[]
 }
 
 model ApiService {
-  id            Int           @id @default(autoincrement())
-  projectId     Int
-  name          String
-  baseUrl       String
-  environment   String        @default("development")
-  isActive      Boolean       @default(true)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  contracts     ApiContract[]
-  dependencies  ApiDependency[] @relation("ProviderDependencies")
-  healthChecks  HealthCheck[]
-  incidents     Incident[]
+  id               String     @id @default(uuid()) @db.Uuid
+  projectId        String     @db.Uuid
+  name             String
+  baseUrl          String
+  description      String?
+  healthPath       String     @default("/health")
+  httpMethod       HttpMethod @default(GET)
+  expectedStatus   Int        @default(200)
+  checkIntervalSec Int        @default(60)
+  timeoutMs        Int        @default(5000)
+  createdAt        DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime   @updatedAt @db.Timestamptz(6)
 
-  @@unique([projectId, name])
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contracts    ApiContract[]
+  endpoints    Endpoint[]
+  dependencies Dependency[]
+  checks       ApiCheck[]
+  incidents    Incident[]
+
+  @@index([projectId])
+}
+
+model Consumer {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @db.Uuid
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dependencies Dependency[]
+
   @@index([projectId])
 }
 
 model ApiContract {
-  id              Int               @id @default(autoincrement())
-  apiServiceId    Int
-  version         String
-  spec            Json
-  specHash        String?
-  createdAt       DateTime          @default(now())
-  apiService      ApiService        @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
-  sourceAnalyses  ContractAnalysis[] @relation("SourceContract")
-  targetAnalyses  ContractAnalysis[] @relation("TargetContract")
+  id           String         @id @default(uuid()) @db.Uuid
+  apiServiceId String         @db.Uuid
+  name         String
+  format       ContractFormat @default(OPENAPI)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(6)
 
-  @@unique([apiServiceId, version])
-  @@index([apiServiceId, createdAt])
-}
+  apiService ApiService         @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
+  versions   ContractVersion[]
 
-model ConsumerService {
-  id            Int             @id @default(autoincrement())
-  projectId     Int
-  name          String
-  description   String?
-  createdAt     DateTime        @default(now())
-  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  dependencies  ApiDependency[]
-
-  @@unique([projectId, name])
-  @@index([projectId])
-}
-
-model ApiDependency {
-  id                Int             @id @default(autoincrement())
-  consumerServiceId Int
-  apiServiceId      Int
-  operationMethod   String
-  operationPath     String
-  consumedFields    String[]        @default([])
-  description       String?
-  createdAt         DateTime        @default(now())
-  consumerService   ConsumerService @relation(fields: [consumerServiceId], references: [id], onDelete: Cascade)
-  apiService        ApiService      @relation("ProviderDependencies", fields: [apiServiceId], references: [id], onDelete: Cascade)
-  impactAssessments ImpactAssessment[]
-
-  @@unique([consumerServiceId, apiServiceId, operationMethod, operationPath])
   @@index([apiServiceId])
-  @@index([consumerServiceId])
 }
 
-model ContractAnalysis {
-  id               Int             @id @default(autoincrement())
-  sourceContractId Int
-  targetContractId Int
-  requestedById    Int?
-  status           AnalysisStatus  @default(PENDING)
-  summary          String?
-  createdAt        DateTime        @default(now())
-  completedAt      DateTime?
-  sourceContract   ApiContract     @relation("SourceContract", fields: [sourceContractId], references: [id], onDelete: Restrict)
-  targetContract   ApiContract     @relation("TargetContract", fields: [targetContractId], references: [id], onDelete: Restrict)
-  requestedBy      User?           @relation("AnalysisRequester", fields: [requestedById], references: [id], onDelete: SetNull)
-  changes          ContractChange[]
+model ContractVersion {
+  id         String   @id @default(uuid()) @db.Uuid
+  contractId String   @db.Uuid
+  version    String
+  definition Json
+  checksum   String?
+  isCurrent  Boolean  @default(false)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
 
-  @@index([sourceContractId, targetContractId])
-  @@index([status, createdAt])
+  contract         ApiContract      @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  changesFrom      BreakingChange[] @relation("ChangeFromVersion")
+  changesTo        BreakingChange[] @relation("ChangeToVersion")
+
+  @@unique([contractId, version])
 }
 
-model ContractChange {
-  id             Int               @id @default(autoincrement())
-  analysisId     Int
-  operationPath  String?
-  httpMethod     String?
-  changeType     String
-  severity       ChangeSeverity
-  title          String
-  description    String
-  oldValue       Json?
-  newValue       Json?
-  analysis       ContractAnalysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
-  impactAssessments ImpactAssessment[]
+model Endpoint {
+  id           String     @id @default(uuid()) @db.Uuid
+  apiServiceId String     @db.Uuid
+  method       HttpMethod
+  path         String
+  createdAt    DateTime   @default(now()) @db.Timestamptz(6)
 
-  @@index([analysisId, severity])
+  apiService   ApiService           @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
+  usedBy       DependencyEndpoint[]
+  changes      BreakingChange[]
+
+  @@unique([apiServiceId, method, path])
 }
 
-model ImpactAssessment {
-  id                   Int            @id @default(autoincrement())
-  contractChangeId     Int
-  apiDependencyId      Int
-  riskLevel            ImpactRisk
-  reason               String
-  recommendedTest      String?
-  createdAt            DateTime       @default(now())
-  contractChange       ContractChange @relation(fields: [contractChangeId], references: [id], onDelete: Cascade)
-  apiDependency        ApiDependency  @relation(fields: [apiDependencyId], references: [id], onDelete: Cascade)
+model Dependency {
+  id           String      @id @default(uuid()) @db.Uuid
+  consumerId   String      @db.Uuid
+  apiServiceId String      @db.Uuid
+  environment  Environment @default(PRODUCTION)
+  createdAt    DateTime    @default(now()) @db.Timestamptz(6)
 
-  @@unique([contractChangeId, apiDependencyId])
-  @@index([apiDependencyId])
+  consumer   Consumer             @relation(fields: [consumerId], references: [id], onDelete: Cascade)
+  apiService ApiService           @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
+  endpoints  DependencyEndpoint[]
+
+  @@unique([consumerId, apiServiceId, environment])
+  @@index([apiServiceId])
 }
 
-model Incident {
-  id            Int              @id @default(autoincrement())
-  apiServiceId  Int
-  title         String
-  status        IncidentStatus   @default(OPEN)
-  severity      IncidentSeverity @default(WARNING)
-  firstSeenAt   DateTime         @default(now())
-  lastSeenAt    DateTime         @default(now())
-  resolvedAt    DateTime?
-  apiService    ApiService       @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
-  healthChecks  HealthCheck[]
+model DependencyEndpoint {
+  id           String @id @default(uuid()) @db.Uuid
+  dependencyId String @db.Uuid
+  endpointId   String @db.Uuid
 
-  @@index([apiServiceId, status])
-  @@index([firstSeenAt])
+  dependency Dependency @relation(fields: [dependencyId], references: [id], onDelete: Cascade)
+  endpoint   Endpoint   @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@unique([dependencyId, endpointId])
+  @@index([endpointId])
 }
 
-model HealthCheck {
-  id             Int          @id @default(autoincrement())
-  apiServiceId   Int
-  incidentId     Int?
-  status         HealthStatus
-  checkedAt      DateTime     @default(now())
+model BreakingChange {
+  id            String     @id @default(uuid()) @db.Uuid
+  fromVersionId String     @db.Uuid
+  toVersionId   String     @db.Uuid
+  endpointId    String?    @db.Uuid
+  changeType    ChangeType
+  severity      Severity   @default(HIGH)
+  description   String
+  detectedAt    DateTime   @default(now()) @db.Timestamptz(6)
+
+  fromVersion ContractVersion @relation("ChangeFromVersion", fields: [fromVersionId], references: [id], onDelete: Cascade)
+  toVersion   ContractVersion @relation("ChangeToVersion", fields: [toVersionId], references: [id], onDelete: Cascade)
+  endpoint    Endpoint?       @relation(fields: [endpointId], references: [id], onDelete: SetNull)
+
+  @@index([fromVersionId])
+  @@index([toVersionId])
+  @@index([endpointId])
+}
+
+model ApiCheck {
+  id             String      @id @default(uuid()) @db.Uuid
+  apiServiceId   String      @db.Uuid
+  incidentId     String?     @db.Uuid
+  environment    Environment @default(PRODUCTION)
+  status         CheckStatus
+  statusCode     Int?
   responseTimeMs Int?
-  httpStatus     Int?
   errorMessage   String?
-  apiService     ApiService   @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
-  incident       Incident?    @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+  checkedAt      DateTime    @default(now()) @db.Timestamptz(6)
+
+  apiService ApiService @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
+  incident   Incident?  @relation(fields: [incidentId], references: [id], onDelete: SetNull)
 
   @@index([apiServiceId, checkedAt])
   @@index([incidentId])
 }
 
-model AuditLog {
-  id           Int           @id @default(autoincrement())
-  projectId    Int
-  actorUserId  Int?
-  actorType    AuditActorType @default(USER)
-  action       String
-  resourceType String
-  resourceId   String?
-  details      Json?
-  createdAt    DateTime      @default(now())
-  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  actor        User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+model Incident {
+  id           String         @id @default(uuid()) @db.Uuid
+  apiServiceId String         @db.Uuid
+  title        String
+  description  String?
+  severity     Severity       @default(MEDIUM)
+  status       IncidentStatus @default(OPEN)
+  detectedAt   DateTime       @default(now()) @db.Timestamptz(6)
+  resolvedAt   DateTime?      @db.Timestamptz(6)
+  updatedAt    DateTime       @updatedAt @db.Timestamptz(6)
 
-  @@index([projectId, createdAt])
-  @@index([resourceType, resourceId])
+  apiService ApiService @relation(fields: [apiServiceId], references: [id], onDelete: Cascade)
+  checks     ApiCheck[]
+
+  @@index([apiServiceId])
+  @@index([status])
 }
